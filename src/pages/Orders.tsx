@@ -9,6 +9,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Search } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
+
+const orderSchema = z.object({
+  order_number: z.string()
+    .min(3, "Order number must be at least 3 characters")
+    .max(50, "Order number too long")
+    .regex(/^[A-Z0-9-]+$/, "Order number must contain only uppercase letters, numbers, and hyphens"),
+  customer_id: z.string()
+    .min(3, "Customer ID must be at least 3 characters")
+    .max(50, "Customer ID too long")
+    .regex(/^[A-Z0-9-]+$/, "Customer ID must contain only uppercase letters, numbers, and hyphens"),
+  customer_name: z.string()
+    .min(2, "Customer name must be at least 2 characters")
+    .max(100, "Customer name too long")
+    .trim(),
+  destination: z.string()
+    .min(2, "Destination must be at least 2 characters")
+    .max(100, "Destination too long"),
+  product_id: z.string()
+    .min(3, "Product ID must be at least 3 characters")
+    .max(50, "Product ID too long")
+    .regex(/^[A-Z0-9-]+$/, "Product ID must contain only uppercase letters, numbers, and hyphens"),
+  product_name: z.string()
+    .min(2, "Product name must be at least 2 characters")
+    .max(100, "Product name too long"),
+  tonnage_required: z.string()
+    .refine(val => !isNaN(parseFloat(val)) && parseFloat(val) > 0 && parseFloat(val) <= 10000, 
+      "Tonnage must be positive and not exceed 10,000"),
+  deadline_date: z.string()
+    .refine(date => new Date(date) > new Date(), "Deadline must be in the future"),
+  priority_level: z.enum(["critical", "high", "medium", "low"])
+});
 
 export default function Orders() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -40,6 +72,13 @@ export default function Orders() {
 
   const createOrder = useMutation({
     mutationFn: async (order: typeof formData) => {
+      // Validate input data
+      const validation = orderSchema.safeParse(order);
+      if (!validation.success) {
+        const firstError = validation.error.errors[0];
+        throw new Error(firstError.message);
+      }
+
       const { error } = await supabase.from("customer_orders").insert([{
         ...order,
         tonnage_required: parseFloat(order.tonnage_required)
@@ -62,8 +101,8 @@ export default function Orders() {
         deadline_date: "",
       });
     },
-    onError: () => {
-      toast.error("Failed to create order");
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to create order");
     },
   });
 

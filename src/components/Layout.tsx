@@ -1,6 +1,8 @@
 import { ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 import { 
   LayoutDashboard, 
   Package, 
@@ -8,7 +10,8 @@ import {
   Train, 
   MapPin, 
   FileSpreadsheet,
-  Sparkles
+  Sparkles,
+  LogOut
 } from "lucide-react";
 
 interface LayoutProps {
@@ -27,11 +30,18 @@ const navItems = [
 
 export const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
+  const { signOut, user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
 
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-border bg-card">
+      <aside className="w-64 border-r border-border bg-card flex flex-col">
         <div className="flex h-16 items-center gap-2 border-b border-border px-6">
           <Train className="h-8 w-8 text-primary" />
           <div>
@@ -40,7 +50,15 @@ export const Layout = ({ children }: LayoutProps) => {
           </div>
         </div>
         
-        <nav className="space-y-1 p-4">
+        {user && (
+          <div className="px-6 py-2 border-b border-border">
+            <p className="text-xs text-muted-foreground truncate" title={user.email}>
+              {user.email}
+            </p>
+          </div>
+        )}
+        
+        <nav className="flex-1 space-y-1 p-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -62,6 +80,17 @@ export const Layout = ({ children }: LayoutProps) => {
             );
           })}
         </nav>
+
+        <div className="p-4 border-t border-border">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start text-muted-foreground hover:text-foreground"
+            onClick={handleSignOut}
+          >
+            <LogOut className="mr-3 h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
       </aside>
 
       {/* Main Content */}
