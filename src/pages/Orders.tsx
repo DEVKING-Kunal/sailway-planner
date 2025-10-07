@@ -9,38 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Search } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
-
-const orderSchema = z.object({
-  order_number: z.string()
-    .min(3, "Order number must be at least 3 characters")
-    .max(50, "Order number too long")
-    .regex(/^[A-Z0-9-]+$/, "Order number must contain only uppercase letters, numbers, and hyphens"),
-  customer_id: z.string()
-    .min(3, "Customer ID must be at least 3 characters")
-    .max(50, "Customer ID too long")
-    .regex(/^[A-Z0-9-]+$/, "Customer ID must contain only uppercase letters, numbers, and hyphens"),
-  customer_name: z.string()
-    .min(2, "Customer name must be at least 2 characters")
-    .max(100, "Customer name too long")
-    .trim(),
-  destination: z.string()
-    .min(2, "Destination must be at least 2 characters")
-    .max(100, "Destination too long"),
-  product_id: z.string()
-    .min(3, "Product ID must be at least 3 characters")
-    .max(50, "Product ID too long")
-    .regex(/^[A-Z0-9-]+$/, "Product ID must contain only uppercase letters, numbers, and hyphens"),
-  product_name: z.string()
-    .min(2, "Product name must be at least 2 characters")
-    .max(100, "Product name too long"),
-  tonnage_required: z.string()
-    .refine(val => !isNaN(parseFloat(val)) && parseFloat(val) > 0 && parseFloat(val) <= 10000, 
-      "Tonnage must be positive and not exceed 10,000"),
-  deadline_date: z.string()
-    .refine(date => new Date(date) > new Date(), "Deadline must be in the future"),
-  priority_level: z.enum(["critical", "high", "medium", "low"])
-});
+import { orderValidation } from "@/lib/validation";
+import { BUSINESS_RULES } from "@/lib/constants";
 
 export default function Orders() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -72,8 +42,8 @@ export default function Orders() {
 
   const createOrder = useMutation({
     mutationFn: async (order: typeof formData) => {
-      // Validate input data
-      const validation = orderSchema.safeParse(order);
+      // Enterprise-grade validation
+      const validation = orderValidation.safeParse(order);
       if (!validation.success) {
         const firstError = validation.error.errors[0];
         throw new Error(firstError.message);
@@ -141,20 +111,22 @@ export default function Orders() {
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="order_number">Order Number</Label>
+                  <Label htmlFor="order_number">Order Number (ORD-XXXXX)</Label>
                   <Input
                     id="order_number"
+                    placeholder="ORD-2025-001"
                     value={formData.order_number}
-                    onChange={(e) => setFormData({ ...formData, order_number: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, order_number: e.target.value.toUpperCase() })}
                     className="bg-secondary border-border"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="customer_id">Customer ID</Label>
+                  <Label htmlFor="customer_id">Customer ID (CUST-XXXXX)</Label>
                   <Input
                     id="customer_id"
+                    placeholder="CUST-TATA01"
                     value={formData.customer_id}
-                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value.toUpperCase() })}
                     className="bg-secondary border-border"
                   />
                 </div>
@@ -173,30 +145,45 @@ export default function Orders() {
                   <Label htmlFor="product_id">Product ID</Label>
                   <Input
                     id="product_id"
+                    placeholder="PROD-XXXXX"
                     value={formData.product_id}
-                    onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, product_id: e.target.value.toUpperCase() })}
                     className="bg-secondary border-border"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="product_name">Product Name</Label>
-                  <Input
-                    id="product_name"
+                  <Select
                     value={formData.product_name}
-                    onChange={(e) => setFormData({ ...formData, product_name: e.target.value })}
-                    className="bg-secondary border-border"
-                  />
+                    onValueChange={(value) => setFormData({ ...formData, product_name: value })}
+                  >
+                    <SelectTrigger className="bg-secondary border-border">
+                      <SelectValue placeholder="Select product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(BUSINESS_RULES.PRODUCTS).map(product => (
+                        <SelectItem key={product} value={product}>{product}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="destination">Destination</Label>
-                  <Input
-                    id="destination"
+                  <Select
                     value={formData.destination}
-                    onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                    className="bg-secondary border-border"
-                  />
+                    onValueChange={(value) => setFormData({ ...formData, destination: value })}
+                  >
+                    <SelectTrigger className="bg-secondary border-border">
+                      <SelectValue placeholder="Select city" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BUSINESS_RULES.VALID_CITIES.map(city => (
+                        <SelectItem key={city} value={city}>{city}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tonnage">Tonnage Required</Label>

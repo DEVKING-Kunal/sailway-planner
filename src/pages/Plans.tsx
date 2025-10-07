@@ -4,15 +4,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileSpreadsheet, Sparkles, MapPin, Package } from "lucide-react";
 import { toast } from "sonner";
+import { Sparkles, Loader2, Package, TrendingUp, DollarSign, Gauge, MapPin, Calendar, AlertCircle } from "lucide-react";
+import { RakeOptimizer } from "@/lib/optimizer";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Plans() {
   const [isGenerating, setIsGenerating] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: plans, isLoading } = useQuery({
-    queryKey: ["plans"],
+  // Fetch existing plans
+  const { data: plans, isLoading: plansLoading } = useQuery({
+    queryKey: ["rake-plans"],
     queryFn: async () => {
       const { data } = await supabase
         .from("rake_plans")
@@ -22,8 +25,9 @@ export default function Plans() {
     },
   });
 
+  // Fetch plan-order relationships
   const { data: planOrders } = useQuery({
-    queryKey: ["plan-orders"],
+    queryKey: ["rake-plan-orders"],
     queryFn: async () => {
       const { data } = await supabase
         .from("rake_plan_orders")
@@ -36,267 +40,274 @@ export default function Plans() {
     },
   });
 
-  const generatePlan = useMutation({
+  // Generate optimized plans
+  const generatePlans = useMutation({
     mutationFn: async () => {
       setIsGenerating(true);
-      
-      // Fetch all necessary data
-      const [ordersResult, inventoryResult, wagonsResult, pointsResult] = await Promise.all([
-        supabase.from("customer_orders").select("*").eq("status", "open").order("priority_level", { ascending: true }),
+
+      // Fetch all required data
+      const [ordersRes, inventoryRes, wagonsRes, loadingPointsRes] = await Promise.all([
+        supabase.from("customer_orders").select("*").eq("status", "open"),
         supabase.from("inventory").select("*"),
         supabase.from("wagon_availability").select("*"),
-        supabase.from("loading_points").select("*").eq("operational_status", "active")
+        supabase.from("loading_points").select("*"),
       ]);
 
-      const orders = ordersResult.data || [];
-      const inventory = inventoryResult.data || [];
-      const wagons = wagonsResult.data || [];
-      const points = pointsResult.data || [];
+      const orders = ordersRes.data || [];
+      const inventory = inventoryRes.data || [];
+      const wagons = wagonsRes.data || [];
+      const loadingPoints = loadingPointsRes.data || [];
 
       if (orders.length === 0) {
-        throw new Error("No open orders to process");
+        throw new Error("No open orders to plan");
       }
 
-      // Simple optimization algorithm
-      const priorityScores = {
-        critical: 4,
-        high: 3,
-        medium: 2,
-        low: 1
+      // Run advanced linear programming optimization
+      const optimizer = new RakeOptimizer(orders, inventory, wagons, loadingPoints);
+      const result = optimizer.optimize();
+
+      console.log("Optimization Result:", result);
+
+      if (result.rakePlans.length === 0) {
+        throw new Error("Unable to create any rake plans. Check inventory, wagon availability, and loading point capacity.");
+      }
+
+      // Insert generated plans
+      const planInserts = result.rakePlans.map(plan => ({
+        rake_id: plan.rakeId,
+        assigned_loading_point: plan.loadingPoint,
+        origin_stockyard: plan.originStockyard,
+        destinations: [plan.destination],
+        wagon_type: plan.wagonType,
+        wagon_count: plan.wagonCount,
+        total_tonnage: plan.totalTonnage,
+        utilization_percentage: plan.utilization * 100,
+        estimated_dispatch_time: plan.estimatedDispatchTime,
+        estimated_total_cost: plan.cost,
+        composite_priority_score: plan.priorityScore,
+      }));
+
+      const { data: insertedPlans, error: planError } = await supabase
+        .from("rake_plans")
+        .insert(planInserts)
+        .select();
+
+      if (planError) throw planError;
+
+      // Link orders to plans
+      const orderLinks: any[] = [];
+      result.rakePlans.forEach((plan, index) => {
+        const dbPlan = insertedPlans[index];
+        plan.orders.forEach(order => {
+          orderLinks.push({
+            rake_plan_id: dbPlan.id,
+            order_id: order.id,
+            tonnage_allocated: order.tonnage_required,
+          });
+        });
+      });
+
+      if (orderLinks.length > 0) {
+        const { error: linkError } = await supabase
+          .from("rake_plan_orders")
+          .insert(orderLinks);
+
+        if (linkError) throw linkError;
+      }
+
+      // Update order statuses
+      const orderIds = result.rakePlans.flatMap(p => p.orders.map(o => o.id));
+      if (orderIds.length > 0) {
+        await supabase
+          .from("customer_orders")
+          .update({ status: "planned" })
+          .in("id", orderIds);
+      }
+
+      return {
+        plansCreated: result.rakePlans.length,
+        ordersPlanned: orderIds.length,
+        unfulfilledOrders: result.unfulfilledOrders.length,
+        utilizationRate: result.utilizationRate,
+        totalCost: result.totalCost,
       };
-
-      // Group orders by product
-      const ordersByProduct = orders.reduce((acc, order) => {
-        if (!acc[order.product_id]) acc[order.product_id] = [];
-        acc[order.product_id].push(order);
-        return acc;
-      }, {} as Record<string, typeof orders>);
-
-      const generatedPlans = [];
-
-      // Generate rakes for each product group
-      for (const [productId, productOrders] of Object.entries(ordersByProduct)) {
-        // Sort by priority
-        const sortedOrders = productOrders.sort((a, b) => 
-          priorityScores[b.priority_level] - priorityScores[a.priority_level]
-        );
-
-        // Standard rake capacity: 4000-4200 tonnes
-        const rakeCapacity = 4000;
-        let currentTonnage = 0;
-        let rakeOrders: typeof sortedOrders = [];
-        let rakeNumber = 1;
-
-        for (const order of sortedOrders) {
-          if (currentTonnage + order.tonnage_required <= 4200) {
-            rakeOrders.push(order);
-            currentTonnage += order.tonnage_required;
-          }
-
-          // If we've filled a rake or this is the last order
-          if (currentTonnage >= rakeCapacity || order === sortedOrders[sortedOrders.length - 1]) {
-            if (rakeOrders.length > 0) {
-              // Find compatible wagon type (simplified)
-              const wagonType = wagons.find(w => w.available_count > 0)?.wagon_type || "BOXN";
-              const wagonCount = Math.ceil(currentTonnage / 67); // ~67 tonnes per wagon
-
-              // Find suitable loading point
-              const loadingPoint = points.find(p => 
-                p.compatible_products.includes(productId)
-              ) || points[0];
-
-              // Find stockyard with inventory
-              const stockyard = inventory.find(i => i.product_id === productId) || inventory[0];
-
-              // Calculate metrics
-              const utilization = (currentTonnage / 4200) * 100;
-              const compositeScore = rakeOrders.reduce((sum, o) => 
-                sum + priorityScores[o.priority_level], 0
-              );
-              
-              const baseCost = currentTonnage * 2.5;
-              const idleCost = utilization < 95 ? (95 - utilization) * 100 : 0;
-              const totalCost = baseCost + idleCost;
-
-              const destinations = [...new Set(rakeOrders.map(o => o.destination))];
-
-              generatedPlans.push({
-                rake_id: `RK-${new Date().toISOString().split('T')[0]}-${productId}-${rakeNumber}`,
-                plan_date: new Date().toISOString().split('T')[0],
-                assigned_loading_point: loadingPoint?.point_id || "LP-001",
-                origin_stockyard: stockyard?.stockyard_id || "SY-001",
-                destinations,
-                wagon_type: wagonType,
-                wagon_count: wagonCount,
-                total_tonnage: currentTonnage,
-                utilization_percentage: utilization,
-                estimated_dispatch_time: new Date(Date.now() + 3600000).toISOString(),
-                estimated_total_cost: totalCost,
-                composite_priority_score: compositeScore,
-                orders: rakeOrders.map(o => o.id)
-              });
-
-              // Reset for next rake
-              currentTonnage = 0;
-              rakeOrders = [];
-              rakeNumber++;
-            }
-          }
-        }
-      }
-
-      // Insert plans
-      for (const plan of generatedPlans) {
-        const orderIds = plan.orders;
-        delete (plan as any).orders;
-        
-        const { data: insertedPlan, error: planError } = await supabase
-          .from("rake_plans")
-          .insert([plan])
-          .select()
-          .single();
-
-        if (planError) throw planError;
-
-        // Link orders to plan
-        const planOrderLinks = orderIds.map(orderId => ({
-          rake_plan_id: insertedPlan.id,
-          order_id: orderId,
-          tonnage_allocated: 0 // Simplified
-        }));
-
-        await supabase.from("rake_plan_orders").insert(planOrderLinks);
-        
-        // Update order statuses
-        for (const orderId of orderIds) {
-          await supabase
-            .from("customer_orders")
-            .update({ status: "planned" })
-            .eq("id", orderId);
-        }
-      }
-
-      setIsGenerating(false);
-      return generatedPlans.length;
     },
-    onSuccess: (count) => {
-      queryClient.invalidateQueries({ queryKey: ["plans"] });
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["rake-plans"] });
+      queryClient.invalidateQueries({ queryKey: ["rake-plan-orders"] });
       queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["plan-orders"] });
-      toast.success(`Generated ${count} optimal rake plan(s)`);
+      
+      toast.success("Optimization Complete!", {
+        description: `Created ${result.plansCreated} rake plans for ${result.ordersPlanned} orders. Average utilization: ${(result.utilizationRate * 100).toFixed(1)}%`,
+      });
+
+      if (result.unfulfilledOrders > 0) {
+        toast.warning(`${result.unfulfilledOrders} orders could not be fulfilled`, {
+          description: "Check inventory, wagon availability, or order requirements",
+        });
+      }
+      
+      setIsGenerating(false);
     },
     onError: (error: Error) => {
+      toast.error("Planning Failed", {
+        description: error.message,
+      });
       setIsGenerating(false);
-      toast.error(error.message || "Failed to generate plans");
     },
   });
+
+  const utilizationColor = (util: number) => {
+    if (util >= 90) return "bg-green-500/20 text-green-400 border-green-500/30";
+    if (util >= 75) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+    return "bg-red-500/20 text-red-400 border-red-500/30";
+  };
+
+  const priorityColor = (score: number) => {
+    if (score >= 3.5) return "bg-[hsl(var(--critical))]/20 text-[hsl(var(--critical))] border-[hsl(var(--critical))]";
+    if (score >= 2.5) return "bg-[hsl(var(--high))]/20 text-[hsl(var(--high))] border-[hsl(var(--high))]";
+    if (score >= 1.5) return "bg-[hsl(var(--medium))]/20 text-[hsl(var(--medium))] border-[hsl(var(--medium))]";
+    return "bg-[hsl(var(--low))]/20 text-[hsl(var(--low))] border-[hsl(var(--low))]";
+  };
+
+  if (plansLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Rake Plans</h1>
-          <p className="text-muted-foreground">AI-optimized dispatch planning</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">AI-Optimized Rake Plans</h1>
+          <p className="text-muted-foreground">
+            Advanced linear programming optimization for maximum efficiency
+          </p>
         </div>
         <Button
-          onClick={() => generatePlan.mutate()}
+          onClick={() => generatePlans.mutate()}
           disabled={isGenerating}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
+          className="bg-gradient-to-r from-primary to-blue-500 text-white shadow-glow"
         >
-          <Sparkles className="mr-2 h-4 w-4" />
-          {isGenerating ? "Generating..." : "Generate Plan"}
+          {isGenerating ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Optimizing...
+            </>
+          ) : (
+            <>
+              <Sparkles className="mr-2 h-4 w-4" />
+              Generate Optimal Plans
+            </>
+          )}
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="text-center text-muted-foreground">Loading plans...</div>
-      ) : plans && plans.length > 0 ? (
+      {isGenerating && (
+        <Alert className="mb-6 border-primary/50 bg-primary/5">
+          <Sparkles className="h-4 w-4" />
+          <AlertDescription>
+            Running advanced optimization algorithm... Analyzing constraints with multi-objective linear programming.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {plans && plans.length > 0 ? (
         <div className="grid gap-6">
           {plans.map((plan) => {
-            const linkedOrders = planOrders?.filter(po => po.rake_plan_id === plan.id) || [];
+            const planOrdersList = planOrders?.filter(po => po.plan?.id === plan.id) || [];
             
             return (
               <Card key={plan.id} className="p-6 bg-card border-border hover:shadow-card transition-all">
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-primary/10">
-                      <FileSpreadsheet className="h-6 w-6 text-primary" />
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-xl font-bold text-foreground">{plan.rake_id}</h3>
+                      <Badge className={utilizationColor(plan.utilization_percentage)}>
+                        {plan.utilization_percentage.toFixed(1)}% Utilization
+                      </Badge>
+                      <Badge className={priorityColor(plan.composite_priority_score || 0)}>
+                        Priority: {(plan.composite_priority_score || 0).toFixed(2)}
+                      </Badge>
                     </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">{plan.rake_id}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Generated on {new Date(plan.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Created {new Date(plan.created_at).toLocaleString()}
+                    </p>
                   </div>
                   <div className="text-right">
-                    <Badge 
-                      variant="outline" 
-                      className={`${
-                        plan.utilization_percentage >= 95 
-                          ? 'bg-[hsl(var(--low))]/20 text-[hsl(var(--low))] border-[hsl(var(--low))]'
-                          : 'bg-[hsl(var(--medium))]/20 text-[hsl(var(--medium))] border-[hsl(var(--medium))]'
-                      }`}
-                    >
-                      {plan.utilization_percentage.toFixed(1)}% Utilized
-                    </Badge>
+                    <p className="text-2xl font-bold text-primary">₹{plan.estimated_total_cost.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">Estimated Cost</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Total Tonnage</p>
-                    <p className="text-lg font-bold text-foreground">{plan.total_tonnage.toFixed(2)}T</p>
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Tonnage</p>
+                      <p className="text-sm font-semibold text-foreground">{plan.total_tonnage}T</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Wagons</p>
-                    <p className="text-lg font-bold text-foreground">{plan.wagon_count} {plan.wagon_type}</p>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Wagons</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        {plan.wagon_count} × {plan.wagon_type}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Estimated Cost</p>
-                    <p className="text-lg font-bold text-foreground">₹{plan.estimated_total_cost.toFixed(2)}</p>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Route</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        {plan.origin_stockyard} → {plan.destinations[0]}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Priority Score</p>
-                    <p className="text-lg font-bold text-foreground">{plan.composite_priority_score?.toFixed(1) || "N/A"}</p>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Dispatch ETA</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        {plan.estimated_dispatch_time 
+                          ? new Date(plan.estimated_dispatch_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                          : 'TBD'}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-4 p-4 bg-secondary rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-foreground">
-                      <span className="text-muted-foreground">From:</span> {plan.origin_stockyard}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-foreground">
-                      <span className="text-muted-foreground">To:</span> {plan.destinations.join(", ")}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-foreground">
-                      <span className="text-muted-foreground">Orders:</span> {linkedOrders.length}
-                    </span>
-                  </div>
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs text-muted-foreground mb-2">Loading Point: {plan.assigned_loading_point}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Orders Fulfilled: {planOrdersList.length}
+                  </p>
                 </div>
               </Card>
             );
           })}
         </div>
       ) : (
-        <Card className="p-12 text-center bg-card border-border">
-          <FileSpreadsheet className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-          <h3 className="text-xl font-semibold text-foreground mb-2">No Plans Yet</h3>
-          <p className="text-muted-foreground mb-6">Generate your first optimized rake plan</p>
+        <Card className="p-12 text-center bg-card border-border border-dashed">
+          <Sparkles className="h-16 w-16 mx-auto mb-4 text-primary/50" />
+          <h3 className="text-xl font-semibold text-foreground mb-2">
+            No Plans Generated Yet
+          </h3>
+          <p className="text-muted-foreground mb-6">
+            Click "Generate Optimal Plans" to run the AI optimization algorithm
+          </p>
           <Button
-            onClick={() => generatePlan.mutate()}
+            onClick={() => generatePlans.mutate()}
             disabled={isGenerating}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Sparkles className="mr-2 h-4 w-4" />
-            Generate Plan
+            Generate First Plan
           </Button>
         </Card>
       )}
