@@ -11,8 +11,10 @@ import {
   MapPin, 
   FileSpreadsheet,
   Sparkles,
-  LogOut
+  LogOut,
+  Shield
 } from "lucide-react";
+import { useIsAdmin } from "@/hooks/useRoles";
 
 interface LayoutProps {
   children: ReactNode;
@@ -26,12 +28,14 @@ const navItems = [
   { icon: MapPin, label: "Loading Points", path: "/loading-points" },
   { icon: FileSpreadsheet, label: "Rake Plans", path: "/plans" },
   { icon: Sparkles, label: "Scenarios", path: "/scenarios" },
+  { icon: Shield, label: "Admin", path: "/admin", adminOnly: true },
 ];
 
 export const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
+  const isAdmin = useIsAdmin();
 
   const handleSignOut = async () => {
     await signOut();
@@ -62,6 +66,11 @@ export const Layout = ({ children }: LayoutProps) => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
+            
+            // Hide admin-only items if user is not admin
+            if (item.adminOnly && !isAdmin) {
+              return null;
+            }
             
             return (
               <Link

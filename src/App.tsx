@@ -13,6 +13,7 @@ import Wagons from "./pages/Wagons";
 import LoadingPoints from "./pages/LoadingPoints";
 import Plans from "./pages/Plans";
 import Scenarios from "./pages/Scenarios";
+import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -60,6 +61,11 @@ const App = () => (
             <Route path="/scenarios" element={
               <ProtectedRoute>
                 <Layout><Scenarios /></Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin" element={
+              <ProtectedRoute>
+                <Layout><Admin /></Layout>
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />
