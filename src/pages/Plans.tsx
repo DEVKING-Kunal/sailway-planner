@@ -45,32 +45,70 @@ export default function Plans() {
     mutationFn: async () => {
       setIsGenerating(true);
 
-      // Fetch all required data
-      const [ordersRes, inventoryRes, wagonsRes, loadingPointsRes] = await Promise.all([
-        supabase.from("customer_orders").select("*").eq("status", "open"),
-        supabase.from("inventory").select("*"),
-        supabase.from("wagon_availability").select("*"),
-        supabase.from("loading_points").select("*"),
-      ]);
+      try {
+        // Fetch all required data
+        const [ordersRes, inventoryRes, wagonsRes, loadingPointsRes] = await Promise.all([
+          supabase.from("customer_orders").select("*").eq("status", "open"),
+          supabase.from("inventory").select("*"),
+          supabase.from("wagon_availability").select("*"),
+          supabase.from("loading_points").select("*").eq("operational_status", "active"),
+        ]);
 
-      const orders = ordersRes.data || [];
-      const inventory = inventoryRes.data || [];
-      const wagons = wagonsRes.data || [];
-      const loadingPoints = loadingPointsRes.data || [];
+        // Check for errors in data fetching
+        if (ordersRes.error) throw new Error(`Orders fetch failed: ${ordersRes.error.message}`);
+        if (inventoryRes.error) throw new Error(`Inventory fetch failed: ${inventoryRes.error.message}`);
+        if (wagonsRes.error) throw new Error(`Wagons fetch failed: ${wagonsRes.error.message}`);
+        if (loadingPointsRes.error) throw new Error(`Loading points fetch failed: ${loadingPointsRes.error.message}`);
 
-      if (orders.length === 0) {
-        throw new Error("No open orders to plan");
-      }
+        const orders = ordersRes.data || [];
+        const inventory = inventoryRes.data || [];
+        const wagons = wagonsRes.data || [];
+        const loadingPoints = loadingPointsRes.data || [];
 
-      // Run advanced linear programming optimization
-      const optimizer = new RakeOptimizer(orders, inventory, wagons, loadingPoints);
-      const result = optimizer.optimize();
+        // Validation checks
+        if (orders.length === 0) {
+          throw new Error("No open orders available to plan. Create some orders first.");
+        }
 
-      console.log("Optimization Result:", result);
+        if (inventory.length === 0) {
+          throw new Error("No inventory available. Add inventory before generating plans.");
+        }
 
-      if (result.rakePlans.length === 0) {
-        throw new Error("Unable to create any rake plans. Check inventory, wagon availability, and loading point capacity.");
-      }
+        if (wagons.length === 0) {
+          throw new Error("No wagons available. Configure wagon availability first.");
+        }
+
+        if (loadingPoints.length === 0) {
+          throw new Error("No active loading points available. Configure loading points first.");
+        }
+
+        console.log("Starting optimization with:", {
+          orders: orders.length,
+          inventory: inventory.length,
+          wagons: wagons.length,
+          loadingPoints: loadingPoints.length
+        });
+
+        // Run advanced linear programming optimization
+        const optimizer = new RakeOptimizer(orders, inventory, wagons, loadingPoints);
+        const result = optimizer.optimize();
+
+        console.log("Optimization Result:", result);
+
+        if (result.rakePlans.length === 0) {
+          const reasons = [];
+          if (result.unfulfilledOrders.length > 0) {
+            reasons.push(`${result.unfulfilledOrders.length} orders couldn't be fulfilled`);
+          }
+          throw new Error(
+            `Unable to create any rake plans. Possible reasons:\n` +
+            `- Insufficient inventory for order quantities\n` +
+            `- Not enough wagons available (minimum ${50} required per rake)\n` +
+            `- Loading points incompatible with product types\n` +
+            `- Order tonnage too low (minimum 2000 tonnes for economic rake)\n` +
+            reasons.join(", ")
+          );
+        }
 
       // Insert generated plans
       const planInserts = result.rakePlans.map(plan => ({
@@ -124,13 +162,17 @@ export default function Plans() {
           .in("id", orderIds);
       }
 
-      return {
-        plansCreated: result.rakePlans.length,
-        ordersPlanned: orderIds.length,
-        unfulfilledOrders: result.unfulfilledOrders.length,
-        utilizationRate: result.utilizationRate,
-        totalCost: result.totalCost,
-      };
+        return {
+          plansCreated: result.rakePlans.length,
+          ordersPlanned: orderIds.length,
+          unfulfilledOrders: result.unfulfilledOrders.length,
+          utilizationRate: result.utilizationRate,
+          totalCost: result.totalCost,
+        };
+      } catch (error) {
+        console.error("Optimization error:", error);
+        throw error;
+      }
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["rake-plans"] });

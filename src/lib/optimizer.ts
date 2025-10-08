@@ -21,6 +21,7 @@ interface InventoryItem {
 interface Wagon {
   wagon_type: string;
   available_count: number;
+  total_count: number;
 }
 
 interface LoadingPoint {
@@ -64,10 +65,11 @@ export class RakeOptimizer {
     wagons: Wagon[],
     loadingPoints: LoadingPoint[]
   ) {
-    this.orders = orders;
-    this.inventory = inventory;
-    this.wagons = wagons;
-    this.loadingPoints = loadingPoints;
+    // Deep clone to avoid mutating original data
+    this.orders = JSON.parse(JSON.stringify(orders));
+    this.inventory = JSON.parse(JSON.stringify(inventory));
+    this.wagons = JSON.parse(JSON.stringify(wagons));
+    this.loadingPoints = JSON.parse(JSON.stringify(loadingPoints));
   }
 
   /**
@@ -283,7 +285,10 @@ export class RakeOptimizer {
 
   private selectOptimalWagonType(productName: string): string | null {
     const productConfig = BUSINESS_RULES.PRODUCTS[productName as keyof typeof BUSINESS_RULES.PRODUCTS];
-    if (!productConfig) return null;
+    if (!productConfig) {
+      console.warn(`Product ${productName} not found in BUSINESS_RULES.PRODUCTS`);
+      return null;
+    }
     
     // Find available wagon type with best cost-capacity ratio
     for (const wagonType of productConfig.wagonTypes) {
@@ -291,11 +296,17 @@ export class RakeOptimizer {
       if (wagon) return wagonType;
     }
     
+    console.warn(`No available wagons for product ${productName}. Required: ${BUSINESS_RULES.RAKE.minWagons} wagons`);
     return null;
   }
 
   private getWagonCapacity(wagonType: string): number {
-    return BUSINESS_RULES.WAGON_TYPES[wagonType as keyof typeof BUSINESS_RULES.WAGON_TYPES]?.capacity || 60;
+    const capacity = BUSINESS_RULES.WAGON_TYPES[wagonType as keyof typeof BUSINESS_RULES.WAGON_TYPES]?.capacity;
+    if (!capacity) {
+      console.warn(`Wagon type ${wagonType} not found, using default capacity 60`);
+      return 60;
+    }
+    return capacity;
   }
 
   private findBestStockyard(productName: string, tonnageNeeded: number): string | null {
@@ -303,7 +314,10 @@ export class RakeOptimizer {
       inv => inv.product_name === productName && inv.tonnage_available >= tonnageNeeded
     );
     
-    if (suitable.length === 0) return null;
+    if (suitable.length === 0) {
+      console.warn(`No inventory available for ${productName} with ${tonnageNeeded} tonnes needed`);
+      return null;
+    }
     
     // Return stockyard with highest availability (less fragmentation)
     return suitable.sort((a, b) => b.tonnage_available - a.tonnage_available)[0].stockyard_name;
@@ -317,7 +331,10 @@ export class RakeOptimizer {
             lp.compatible_products.includes(productName)
     );
     
-    if (suitable.length === 0) return null;
+    if (suitable.length === 0) {
+      console.warn(`No active loading points for product ${productName}`);
+      return null;
+    }
     
     // Return loading point with highest capacity
     return suitable.sort((a, b) => b.capacity_tph - a.capacity_tph)[0].point_name;
@@ -362,7 +379,10 @@ export class RakeOptimizer {
     const baseCost = BUSINESS_RULES.COSTS.baseRakeCharge;
     const tonnageCost = totalTonnage * BUSINESS_RULES.COSTS.perTonneRate;
     const distanceCost = distance * BUSINESS_RULES.COSTS.distanceMultiplier;
-    const wagonCost = wagonCount * BUSINESS_RULES.WAGON_TYPES[wagonType as keyof typeof BUSINESS_RULES.WAGON_TYPES].costPerKm * distance;
+    
+    const wagonTypeConfig = BUSINESS_RULES.WAGON_TYPES[wagonType as keyof typeof BUSINESS_RULES.WAGON_TYPES];
+    const wagonCostPerKm = wagonTypeConfig?.costPerKm || 2.5;
+    const wagonCost = wagonCount * wagonCostPerKm * distance;
     
     const cost = baseCost + tonnageCost + distanceCost + wagonCost;
     
