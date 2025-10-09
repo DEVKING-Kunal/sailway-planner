@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck } from 'lucide-react';
-import { useEffect } from 'react';
+import { validateAuthSignUp, validateAuthSignIn } from '@/lib/validation';
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -29,9 +29,19 @@ export default function Auth() {
     setLoading(true);
 
     try {
+      // Validate input based on login/signup mode
+      const validationResult = isLogin 
+        ? validateAuthSignIn({ email, password })
+        : validateAuthSignUp({ email, password });
+
+      if (!validationResult.success) {
+        const firstError = validationResult.error.errors[0];
+        throw new Error(firstError.message);
+      }
+
       const { error } = isLogin 
-        ? await signIn(email, password)
-        : await signUp(email, password);
+        ? await signIn(validationResult.data.email, validationResult.data.password)
+        : await signUp(validationResult.data.email, validationResult.data.password);
 
       if (error) {
         toast({
@@ -93,8 +103,13 @@ export default function Auth() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={loading}
-                minLength={6}
+                minLength={isLogin ? 1 : 8}
               />
+              {!isLogin && (
+                <p className="text-xs text-muted-foreground">
+                  Password must be at least 8 characters with uppercase, lowercase, and numbers
+                </p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

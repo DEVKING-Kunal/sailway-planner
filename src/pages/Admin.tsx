@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, UserPlus, Trash2, Shield, Users } from "lucide-react";
-import { useAssignRole, useRemoveRole, type AppRole } from "@/hooks/useRoles";
+import { useAssignRole, useRemoveRole, useIsAdmin, type AppRole } from "@/hooks/useRoles";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -26,15 +27,70 @@ const ROLE_COLORS: Record<AppRole, string> = {
 };
 
 export default function Admin() {
+  const navigate = useNavigate();
+  const isAdmin = useIsAdmin();
   const [userEmail, setUserEmail] = useState("");
   const [selectedRole, setSelectedRole] = useState<AppRole>("viewer");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [foundUser, setFoundUser] = useState<{ id: string; email: string; roles: AppRole[] } | null>(null);
   const { toast } = useToast();
   
   const assignRole = useAssignRole();
   const removeRole = useRemoveRole();
 
+  // Redirect non-admins
+  useEffect(() => {
+    if (isAdmin === false) {
+      toast({
+        variant: "destructive",
+        title: "Access Denied",
+        description: "You do not have permission to access the admin panel.",
+      });
+      navigate("/");
+    }
+  }, [isAdmin, navigate, toast]);
+
+  const handleLookupUser = async () => {
+    if (!userEmail.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter an email address",
+      });
+      return;
+    }
+
+    setLookupLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-user-by-email', {
+        body: { email: userEmail.trim() },
+      });
+
+      if (error) throw error;
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setFoundUser(data);
+      toast({
+        title: "User found",
+        description: `Found user: ${data.email}`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to find user",
+      });
+      setFoundUser(null);
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
   // Fetch all user roles with user details
-  const { data: userRoles, isLoading } = useQuery({
+  const { data: userRoles, isLoading: rolesLoading } = useQuery({
     queryKey: ['allUserRoles'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -50,66 +106,55 @@ export default function Admin() {
           acc[role.user_id] = {
             user_id: role.user_id,
             roles: [],
+            email: null,
           };
         }
         acc[role.user_id].roles.push(role.role);
         return acc;
       }, {});
       
-      // Fetch user emails from auth.users (admin API)
-      const userIds = Object.keys(grouped);
-      
-      // Since we can't directly access auth.admin in the browser,
-      // we'll use a different approach - store emails in a separate profiles table
-      // or use Supabase Edge Functions. For now, we'll show user IDs.
-      const usersWithRoles = userIds.map((userId) => ({
-        ...grouped[userId],
-        email: userId, // Will show user ID for now
-      }));
-      
-      return usersWithRoles;
+      // Return users with their roles (email will be shown as UUID for now)
+      // To show actual emails, an edge function with service role would be needed
+      return Object.values(grouped);
     },
   });
 
   const handleAssignRole = async () => {
-    if (!userEmail) {
+    if (!foundUser || !selectedRole) {
       toast({
-        title: "Email required",
-        description: "Please enter a user email address.",
         variant: "destructive",
+        title: "Error",
+        description: "Please look up a user and select a role",
       });
       return;
     }
 
-    try {
-      // For now, we'll use the email as the userId (simplified approach)
-      // In production, you'd want to implement a server-side edge function
-      // to properly look up users by email using the admin API
-      
-      toast({
-        title: "Implementation Note",
-        description: "Please enter the user's ID directly. Email lookup requires server-side implementation.",
-        variant: "destructive",
-      });
-      
-      // Uncomment when you have the user ID:
-      // await assignRole.mutateAsync({ userId: userEmail, role: selectedRole });
-      // setUserEmail("");
-    } catch (error: any) {
-      console.error('Error assigning role:', error);
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    assignRole.mutate(
+      { userId: foundUser.id, role: selectedRole },
+      {
+        onSuccess: () => {
+          setUserEmail("");
+          setSelectedRole("viewer");
+          setFoundUser(null);
+        },
+      }
+    );
   };
 
   const handleRemoveRole = async (userId: string, role: AppRole) => {
     await removeRole.mutateAsync({ userId, role });
   };
 
-  if (isLoading) {
+  // Show loading while checking admin status
+  if (isAdmin === undefined) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (rolesLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -146,19 +191,47 @@ export default function Admin() {
             Assign Role to User
           </CardTitle>
           <CardDescription>
-            Enter a user's ID (UUID) and select a role to assign. You can find user IDs in the list below.
+            Enter a user's email address to look them up, then select a role to assign.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <Input
-              placeholder="Enter user ID (UUID)"
-              value={userEmail}
-              onChange={(e) => setUserEmail(e.target.value)}
-              className="flex-1"
-            />
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">User Email</label>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="user@example.com"
+                value={userEmail}
+                onChange={(e) => setUserEmail(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLookupUser()}
+              />
+              <Button 
+                onClick={handleLookupUser} 
+                disabled={lookupLoading || !userEmail.trim()}
+              >
+                {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Lookup"}
+              </Button>
+            </div>
+          </div>
+
+          {foundUser && (
+            <Alert>
+              <AlertDescription>
+                <div className="space-y-1">
+                  <p><strong>Email:</strong> {foundUser.email}</p>
+                  <p><strong>User ID:</strong> {foundUser.id}</p>
+                  {foundUser.roles.length > 0 && (
+                    <p><strong>Current Roles:</strong> {foundUser.roles.map(r => ROLE_LABELS[r]).join(', ')}</p>
+                  )}
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Role to Assign</label>
             <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as AppRole)}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -168,14 +241,22 @@ export default function Admin() {
                 <SelectItem value="admin">Administrator</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={handleAssignRole} disabled={assignRole.isPending}>
-              {assignRole.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                "Assign Role"
-              )}
-            </Button>
           </div>
+
+          <Button 
+            onClick={handleAssignRole}
+            disabled={assignRole.isPending || !foundUser || !selectedRole}
+            className="w-full"
+          >
+            {assignRole.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Assigning...
+              </>
+            ) : (
+              "Assign Role"
+            )}
+          </Button>
         </CardContent>
       </Card>
 
@@ -195,8 +276,10 @@ export default function Admin() {
               userRoles.map((user: any) => (
                 <div key={user.user_id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex-1">
-                    <p className="font-medium text-foreground">{user.email}</p>
-                    <p className="text-xs text-muted-foreground">{user.user_id}</p>
+                    <p className="font-medium text-foreground">{user.email || user.user_id}</p>
+                    {user.email && (
+                      <p className="text-xs text-muted-foreground">{user.user_id}</p>
+                    )}
                   </div>
                   <div className="flex gap-2 flex-wrap justify-end">
                     {user.roles.map((role: AppRole) => (
