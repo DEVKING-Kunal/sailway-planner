@@ -8,10 +8,16 @@ import { toast } from "sonner";
 import { Sparkles, Loader2, Package, TrendingUp, DollarSign, Gauge, MapPin, Calendar, AlertCircle } from "lucide-react";
 import { RakeOptimizer } from "@/lib/optimizer";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useIsAdmin, useIsSeniorPlanner, useIsPlanner } from "@/hooks/useRoles";
 
 export default function Plans() {
   const [isGenerating, setIsGenerating] = useState(false);
   const queryClient = useQueryClient();
+  const isAdmin = useIsAdmin();
+  const isSeniorPlanner = useIsSeniorPlanner();
+  const isPlanner = useIsPlanner();
+  
+  const canGeneratePlans = isAdmin || isSeniorPlanner || isPlanner;
 
   // Fetch existing plans
   const { data: plans, isLoading: plansLoading } = useQuery({
@@ -234,23 +240,25 @@ export default function Plans() {
             Advanced linear programming optimization for maximum efficiency
           </p>
         </div>
-        <Button
-          onClick={() => generatePlans.mutate()}
-          disabled={isGenerating}
-          className="bg-gradient-to-r from-primary to-blue-500 text-white shadow-glow"
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Optimizing...
-            </>
-          ) : (
-            <>
-              <Sparkles className="mr-2 h-4 w-4" />
-              Generate Optimal Plans
-            </>
-          )}
-        </Button>
+        {canGeneratePlans && (
+          <Button
+            onClick={() => generatePlans.mutate()}
+            disabled={isGenerating}
+            className="bg-gradient-to-r from-primary to-blue-500 text-white shadow-glow"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Optimizing...
+              </>
+            ) : (
+              <>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate Optimal Plans
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       {isGenerating && (
@@ -346,16 +354,21 @@ export default function Plans() {
             No Plans Generated Yet
           </h3>
           <p className="text-muted-foreground mb-6">
-            Click "Generate Optimal Plans" to run the AI optimization algorithm
+            {canGeneratePlans 
+              ? "Click 'Generate Optimal Plans' to run the AI optimization algorithm"
+              : "Only planners and above can generate rake plans"
+            }
           </p>
-          <Button
-            onClick={() => generatePlans.mutate()}
-            disabled={isGenerating}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Sparkles className="mr-2 h-4 w-4" />
-            Generate First Plan
-          </Button>
+          {canGeneratePlans && (
+            <Button
+              onClick={() => generatePlans.mutate()}
+              disabled={isGenerating}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Generate First Plan
+            </Button>
+          )}
         </Card>
       )}
     </div>

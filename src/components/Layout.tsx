@@ -16,7 +16,7 @@ import {
   UserPlus,
   ClipboardList
 } from "lucide-react";
-import { useIsAdmin } from "@/hooks/useRoles";
+import { useIsAdmin, useIsSeniorPlanner, useIsPlanner } from "@/hooks/useRoles";
 
 interface LayoutProps {
   children: ReactNode;
@@ -24,13 +24,13 @@ interface LayoutProps {
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Package, label: "Orders", path: "/orders" },
-  { icon: Warehouse, label: "Inventory", path: "/inventory" },
-  { icon: Train, label: "Wagons", path: "/wagons" },
-  { icon: MapPin, label: "Loading Points", path: "/loading-points" },
-  { icon: FileSpreadsheet, label: "Rake Plans", path: "/plans" },
-  { icon: Sparkles, label: "Scenarios", path: "/scenarios" },
-  { icon: UserPlus, label: "Request Role", path: "/role-request" },
+  { icon: Package, label: "Orders", path: "/orders", minRole: 'viewer' },
+  { icon: Warehouse, label: "Inventory", path: "/inventory", minRole: 'viewer' },
+  { icon: Train, label: "Wagons", path: "/wagons", minRole: 'viewer' },
+  { icon: MapPin, label: "Loading Points", path: "/loading-points", minRole: 'viewer' },
+  { icon: FileSpreadsheet, label: "Rake Plans", path: "/plans", minRole: 'planner' },
+  { icon: Sparkles, label: "Scenarios", path: "/scenarios", minRole: 'senior_planner' },
+  { icon: UserPlus, label: "Request Role", path: "/role-request", hideForAdmin: true },
   { icon: Shield, label: "Admin", path: "/admin", adminOnly: true },
   { icon: ClipboardList, label: "Role Requests", path: "/admin/role-requests", adminOnly: true },
 ];
@@ -40,6 +40,8 @@ export const Layout = ({ children }: LayoutProps) => {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
+  const isSeniorPlanner = useIsSeniorPlanner();
+  const isPlanner = useIsPlanner();
 
   const handleSignOut = async () => {
     await signOut();
@@ -73,6 +75,24 @@ export const Layout = ({ children }: LayoutProps) => {
             
             // Hide admin-only items if user is not admin
             if (item.adminOnly && !isAdmin) {
+              return null;
+            }
+            
+            // Hide "Request Role" for admins
+            if (item.hideForAdmin && isAdmin) {
+              return null;
+            }
+            
+            // Role-based access control
+            const hasAccess = () => {
+              if (!item.minRole) return true;
+              if (isAdmin) return true;
+              if (item.minRole === 'senior_planner') return isSeniorPlanner || isAdmin;
+              if (item.minRole === 'planner') return isPlanner || isSeniorPlanner || isAdmin;
+              return true; // viewer can access viewer-level items
+            };
+            
+            if (!hasAccess()) {
               return null;
             }
             

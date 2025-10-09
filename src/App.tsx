@@ -36,37 +36,37 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/orders" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="viewer">
                 <Layout><Orders /></Layout>
               </ProtectedRoute>
             } />
             <Route path="/inventory" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="viewer">
                 <Layout><Inventory /></Layout>
               </ProtectedRoute>
             } />
             <Route path="/wagons" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="viewer">
                 <Layout><Wagons /></Layout>
               </ProtectedRoute>
             } />
             <Route path="/loading-points" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="viewer">
                 <Layout><LoadingPoints /></Layout>
               </ProtectedRoute>
             } />
             <Route path="/plans" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="planner">
                 <Layout><Plans /></Layout>
               </ProtectedRoute>
             } />
             <Route path="/scenarios" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="senior_planner">
                 <Layout><Scenarios /></Layout>
               </ProtectedRoute>
             } />
             <Route path="/admin" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="admin">
                 <Layout><Admin /></Layout>
               </ProtectedRoute>
             } />
@@ -76,7 +76,7 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/admin/role-requests" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireRole="admin">
                 <Layout><AdminRoleRequests /></Layout>
               </ProtectedRoute>
             } />
