@@ -110,8 +110,11 @@ export default function Plans() {
           );
         }
 
-      // Insert generated plans
-      const planInserts = result.rakePlans.map(plan => ({
+      // Deduplicate by rake_id and upsert to avoid unique constraint violations
+      const uniquePlansMap = new Map(result.rakePlans.map((p: any) => [p.rakeId, p]));
+      const uniquePlans = Array.from(uniquePlansMap.values());
+
+      const planInserts = uniquePlans.map((plan: any) => ({
         rake_id: plan.rakeId,
         assigned_loading_point: plan.loadingPoint,
         origin_stockyard: plan.originStockyard,
@@ -125,18 +128,20 @@ export default function Plans() {
         composite_priority_score: plan.priorityScore,
       }));
 
-      const { data: insertedPlans, error: planError } = await supabase
+      const { data: upsertedPlans, error: planError } = await supabase
         .from("rake_plans")
-        .insert(planInserts)
+        .upsert(planInserts, { onConflict: "rake_id" })
         .select();
 
       if (planError) throw planError;
 
       // Link orders to plans
       const orderLinks: any[] = [];
-      result.rakePlans.forEach((plan, index) => {
-        const dbPlan = insertedPlans[index];
-        plan.orders.forEach(order => {
+      const byRakeId = new Map(upsertedPlans.map((p: any) => [p.rake_id, p]));
+      result.rakePlans.forEach((plan: any) => {
+        const dbPlan = byRakeId.get(plan.rakeId);
+        if (!dbPlan) return;
+        plan.orders.forEach((order: any) => {
           orderLinks.push({
             rake_plan_id: dbPlan.id,
             order_id: order.id,
