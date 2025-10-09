@@ -14,6 +14,8 @@ import LoadingPoints from "./pages/LoadingPoints";
 import Plans from "./pages/Plans";
 import Scenarios from "./pages/Scenarios";
 import Admin from "./pages/Admin";
+import RoleRequest from "./pages/RoleRequest";
+import AdminRoleRequests from "./pages/AdminRoleRequests";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -66,6 +68,16 @@ const App = () => (
             <Route path="/admin" element={
               <ProtectedRoute>
                 <Layout><Admin /></Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/role-request" element={
+              <ProtectedRoute>
+                <Layout><RoleRequest /></Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/role-requests" element={
+              <ProtectedRoute>
+                <Layout><AdminRoleRequests /></Layout>
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />

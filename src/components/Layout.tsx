@@ -12,7 +12,9 @@ import {
   FileSpreadsheet,
   Sparkles,
   LogOut,
-  Shield
+  Shield,
+  UserPlus,
+  ClipboardList
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useRoles";
 
@@ -28,7 +30,9 @@ const navItems = [
   { icon: MapPin, label: "Loading Points", path: "/loading-points" },
   { icon: FileSpreadsheet, label: "Rake Plans", path: "/plans" },
   { icon: Sparkles, label: "Scenarios", path: "/scenarios" },
+  { icon: UserPlus, label: "Request Role", path: "/role-request" },
   { icon: Shield, label: "Admin", path: "/admin", adminOnly: true },
+  { icon: ClipboardList, label: "Role Requests", path: "/admin/role-requests", adminOnly: true },
 ];
 
 export const Layout = ({ children }: LayoutProps) => {
@@ -56,13 +60,13 @@ export const Layout = ({ children }: LayoutProps) => {
         
         {user && (
           <div className="px-6 py-2 border-b border-border">
-            <p className="text-xs text-muted-foreground truncate" title={user.email}>
+            <p className="text-xs text-muted-foreground truncate" title={user.email || ''}>
               {user.email}
             </p>
           </div>
         )}
         
-        <nav className="flex-1 space-y-1 p-4">
+        <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
