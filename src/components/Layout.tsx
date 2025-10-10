@@ -14,7 +14,9 @@ import {
   LogOut,
   Shield,
   UserPlus,
-  ClipboardList
+  ClipboardList,
+  TrendingUp,
+  Lightbulb
 } from "lucide-react";
 import { useIsAdmin, useIsSeniorPlanner, useIsPlanner } from "@/hooks/useRoles";
 
@@ -29,6 +31,8 @@ const navItems = [
   { icon: Train, label: "Wagons", path: "/wagons", minRole: 'viewer' },
   { icon: MapPin, label: "Loading Points", path: "/loading-points", minRole: 'viewer' },
   { icon: FileSpreadsheet, label: "Rake Plans", path: "/plans", minRole: 'planner' },
+  { icon: Lightbulb, label: "Production AI", path: "/production", minRole: 'senior_planner' },
+  { icon: TrendingUp, label: "Analytics", path: "/analytics", minRole: 'viewer' },
   { icon: Sparkles, label: "Scenarios", path: "/scenarios", minRole: 'senior_planner' },
   { icon: UserPlus, label: "Request Role", path: "/role-request", hideForAdmin: true },
   { icon: Shield, label: "Admin", path: "/admin", adminOnly: true },

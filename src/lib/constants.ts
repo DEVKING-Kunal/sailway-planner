@@ -34,17 +34,35 @@ export const BUSINESS_RULES = {
     targetUtilization: 0.90, // 90%
   },
 
-  // Cost factors
+  // Enhanced 8-component cost factors
   COSTS: {
-    baseRakeCharge: 25000, // Base cost per rake
+    baseRakeCharge: 25000, // Base freight cost per rake
     perTonneRate: 450, // Per tonne transport cost
     distanceMultiplier: 1.5, // Cost increases with distance
+    loadingCostPerTonne: 75, // Loading point operational cost
+    demurragePerHour: 1500, // Detention charges if delayed
+    idleFreightPerDay: 8000, // Cost of empty/idle wagons
+    penaltyPerDayLate: 5000, // SLA breach penalty
     priorityPremium: {
       critical: 1.5,
       high: 1.2,
       medium: 1.0,
       low: 0.9,
     },
+  },
+
+  // SLA parameters
+  SLA: {
+    atRiskThresholdDays: 3, // Orders within 3 days are at-risk
+    breachGracePeriodHours: 6, // Grace period after deadline
+    criticalOrderBuffer: 1.2, // 20% time buffer for critical orders
+  },
+
+  // Multi-destination clubbing rules
+  CLUBBING: {
+    maxDestinationsPerRake: 3, // Maximum destinations in one rake
+    minTonnagePerDestination: 300, // Minimum tonnage to justify destination stop
+    routeDeviationThreshold: 150, // Max km deviation for clubbing (km)
   },
 
   // Optimization weights

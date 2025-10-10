@@ -38,6 +38,17 @@ interface OptimizationResult {
   totalCost: number;
 }
 
+interface CostBreakdown {
+  base_freight: number;
+  distance_cost: number;
+  loading_cost: number;
+  demurrage: number;
+  penalty: number;
+  idle_freight: number;
+  priority_premium: number;
+  total: number;
+}
+
 interface RakePlan {
   rakeId: string;
   orders: Order[];
@@ -46,11 +57,14 @@ interface RakePlan {
   wagonCount: number;
   utilization: number;
   cost: number;
+  costBreakdown: CostBreakdown;
   priorityScore: number;
   originStockyard: string;
-  destination: string;
+  destinations: string[]; // Multi-destination support
   loadingPoint: string;
   estimatedDispatchTime: string;
+  slaComplianceScore: number;
+  multiDestination: boolean;
 }
 
 export class RakeOptimizer {
@@ -375,31 +389,71 @@ export class RakeOptimizer {
       productName,
     } = params;
     
-    const distance = getDistance(stockyard, destination);
-    const baseCost = BUSINESS_RULES.COSTS.baseRakeCharge;
-    const tonnageCost = totalTonnage * BUSINESS_RULES.COSTS.perTonneRate;
-    const distanceCost = distance * BUSINESS_RULES.COSTS.distanceMultiplier;
+    // Support multi-destination
+    const destinations = Array.isArray(destination) ? destination : [destination];
+    const isMultiDest = destinations.length > 1;
+    
+    // Calculate enhanced 8-component cost breakdown
+    const distance = isMultiDest 
+      ? destinations.reduce((sum, dest) => sum + getDistance(stockyard, dest), 0) / destinations.length
+      : getDistance(stockyard, destinations[0]);
     
     const wagonTypeConfig = BUSINESS_RULES.WAGON_TYPES[wagonType as keyof typeof BUSINESS_RULES.WAGON_TYPES];
     const wagonCostPerKm = wagonTypeConfig?.costPerKm || 2.5;
-    const wagonCost = wagonCount * wagonCostPerKm * distance;
     
-    const cost = baseCost + tonnageCost + distanceCost + wagonCost;
+    // 8-Component Cost Model
+    const baseFreight = BUSINESS_RULES.COSTS.baseRakeCharge;
+    const distanceCost = wagonCount * wagonCostPerKm * distance * BUSINESS_RULES.COSTS.distanceMultiplier;
+    const loadingCost = totalTonnage * BUSINESS_RULES.COSTS.loadingCostPerTonne;
     
-    // Calculate composite priority score
+    // Demurrage: estimated based on loading time
+    const loadingHours = Math.ceil((totalTonnage / 1000) * 2);
+    const demurrage = loadingHours > 24 ? (loadingHours - 24) * BUSINESS_RULES.COSTS.demurragePerHour : 0;
+    
+    // Penalty: check if any orders are at risk or breached
+    let penalty = 0;
+    const now = Date.now();
+    orders.forEach((o: Order) => {
+      const deadline = new Date(o.deadline_date).getTime();
+      const daysLate = Math.max(0, Math.ceil((now - deadline) / (1000 * 60 * 60 * 24)));
+      if (daysLate > 0) penalty += daysLate * BUSINESS_RULES.COSTS.penaltyPerDayLate;
+    });
+    
+    // Idle freight: if utilization is low
+    const idleFreight = utilization < 0.75 ? BUSINESS_RULES.COSTS.idleFreightPerDay * (1 - utilization) : 0;
+    
+    // Priority premium
     const avgPriority = orders.reduce((sum: number, o: Order) => {
       const priorityValues = { critical: 4, high: 3, medium: 2, low: 1 };
       return sum + priorityValues[o.priority_level];
     }, 0) / orders.length;
+    const priorityLevel = avgPriority >= 3.5 ? 'critical' : avgPriority >= 2.5 ? 'high' : avgPriority >= 1.5 ? 'medium' : 'low';
+    const priorityPremium = (baseFreight + distanceCost) * (BUSINESS_RULES.COSTS.priorityPremium[priorityLevel as keyof typeof BUSINESS_RULES.COSTS.priorityPremium] - 1);
     
+    const totalCost = baseFreight + distanceCost + loadingCost + demurrage + penalty + idleFreight + priorityPremium;
+    
+    const costBreakdown: CostBreakdown = {
+      base_freight: Math.round(baseFreight),
+      distance_cost: Math.round(distanceCost),
+      loading_cost: Math.round(loadingCost),
+      demurrage: Math.round(demurrage),
+      penalty: Math.round(penalty),
+      idle_freight: Math.round(idleFreight),
+      priority_premium: Math.round(priorityPremium),
+      total: Math.round(totalCost),
+    };
+    
+    // Calculate composite priority score
     const priorityScore = (
       avgPriority * BUSINESS_RULES.WEIGHTS.priority +
       utilization * BUSINESS_RULES.WEIGHTS.utilization -
-      (cost / 100000) * BUSINESS_RULES.WEIGHTS.cost
+      (totalCost / 100000) * BUSINESS_RULES.WEIGHTS.cost
     );
     
+    // SLA compliance score
+    const slaComplianceScore = this.calculateSLACompliance(orders);
+    
     // Estimate dispatch time (2 hours loading per 1000 tonnes)
-    const loadingHours = Math.ceil((totalTonnage / 1000) * 2);
     const estimatedDispatchTime = new Date(Date.now() + loadingHours * 60 * 60 * 1000).toISOString();
     
     return {
@@ -409,13 +463,34 @@ export class RakeOptimizer {
       wagonType,
       wagonCount,
       utilization: Math.round(utilization * 100) / 100,
-      cost: Math.round(cost),
+      cost: Math.round(totalCost),
+      costBreakdown,
       priorityScore: Math.round(priorityScore * 100) / 100,
       originStockyard: stockyard,
-      destination,
+      destinations,
       loadingPoint,
       estimatedDispatchTime,
+      slaComplianceScore,
+      multiDestination: isMultiDest,
     };
+  }
+
+  private calculateSLACompliance(orders: Order[]): number {
+    const now = Date.now();
+    let complianceScore = 100;
+    
+    orders.forEach(order => {
+      const deadline = new Date(order.deadline_date).getTime();
+      const daysUntil = (deadline - now) / (1000 * 60 * 60 * 24);
+      
+      if (daysUntil < 0) {
+        complianceScore -= 30; // Breached
+      } else if (daysUntil < BUSINESS_RULES.SLA.atRiskThresholdDays) {
+        complianceScore -= 10; // At risk
+      }
+    });
+    
+    return Math.max(0, complianceScore);
   }
 
   private createSingleOrderPlan(order: Order): RakePlan | null {

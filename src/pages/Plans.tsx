@@ -298,7 +298,25 @@ export default function Plans() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                {/* SLA & Cost Breakdown */}
+                {plan.cost_breakdown && (
+                  <div className="mb-4 p-3 bg-secondary/50 rounded-lg">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">ENHANCED COST BREAKDOWN</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      {Object.entries(plan.cost_breakdown as any).map(([key, value]) => {
+                        if (key === 'total' || typeof value !== 'number' || value === 0) return null;
+                        return (
+                          <div key={key} className="flex flex-col">
+                            <span className="text-muted-foreground capitalize text-[10px]">{key.replace(/_/g, ' ')}</span>
+                            <span className="font-semibold text-foreground">₹{(value as number).toLocaleString()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                   <div className="flex items-center gap-2">
                     <Package className="h-4 w-4 text-primary" />
                     <div>
@@ -320,8 +338,18 @@ export default function Plans() {
                     <div>
                       <p className="text-xs text-muted-foreground">Route</p>
                       <p className="text-sm font-semibold text-foreground">
-                        {plan.origin_stockyard} → {plan.destinations[0]}
+                        {plan.origin_stockyard} → {Array.isArray(plan.destinations) ? plan.destinations.join(', ') : plan.destinations[0]}
+                        {plan.multi_destination && <Badge className="ml-1 text-[10px]" variant="secondary">Multi</Badge>}
                       </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">SLA Score</p>
+                      <Badge variant={plan.sla_compliance_score >= 90 ? "default" : plan.sla_compliance_score >= 70 ? "secondary" : "destructive"}>
+                        {plan.sla_compliance_score?.toFixed(0) || 100}%
+                      </Badge>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

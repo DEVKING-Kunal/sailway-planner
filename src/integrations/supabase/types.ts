@@ -16,48 +16,60 @@ export type Database = {
     Tables: {
       customer_orders: {
         Row: {
+          actual_dispatch_date: string | null
           created_at: string
           customer_id: string
           customer_name: string
           deadline_date: string
           destination: string
+          expected_dispatch_date: string | null
           id: string
           order_number: string
           priority_level: Database["public"]["Enums"]["priority_level"]
           product_id: string
           product_name: string
+          sla_status: string | null
           status: Database["public"]["Enums"]["order_status"]
           tonnage_required: number
+          transport_mode: string | null
           updated_at: string
         }
         Insert: {
+          actual_dispatch_date?: string | null
           created_at?: string
           customer_id: string
           customer_name: string
           deadline_date: string
           destination: string
+          expected_dispatch_date?: string | null
           id?: string
           order_number: string
           priority_level?: Database["public"]["Enums"]["priority_level"]
           product_id: string
           product_name: string
+          sla_status?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tonnage_required: number
+          transport_mode?: string | null
           updated_at?: string
         }
         Update: {
+          actual_dispatch_date?: string | null
           created_at?: string
           customer_id?: string
           customer_name?: string
           deadline_date?: string
           destination?: string
+          expected_dispatch_date?: string | null
           id?: string
           order_number?: string
           priority_level?: Database["public"]["Enums"]["priority_level"]
           product_id?: string
           product_name?: string
+          sla_status?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tonnage_required?: number
+          transport_mode?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -122,6 +134,99 @@ export type Database = {
         }
         Relationships: []
       }
+      performance_metrics: {
+        Row: {
+          average_utilization: number | null
+          cost_per_tonne: number | null
+          created_at: string | null
+          id: string
+          loading_point_efficiency: number | null
+          metric_date: string
+          metrics_data: Json | null
+          orders_delayed: number | null
+          orders_fulfilled: number | null
+          sla_compliance_rate: number | null
+          total_cost: number | null
+          total_rakes_formed: number | null
+          wagon_utilization_rate: number | null
+        }
+        Insert: {
+          average_utilization?: number | null
+          cost_per_tonne?: number | null
+          created_at?: string | null
+          id?: string
+          loading_point_efficiency?: number | null
+          metric_date?: string
+          metrics_data?: Json | null
+          orders_delayed?: number | null
+          orders_fulfilled?: number | null
+          sla_compliance_rate?: number | null
+          total_cost?: number | null
+          total_rakes_formed?: number | null
+          wagon_utilization_rate?: number | null
+        }
+        Update: {
+          average_utilization?: number | null
+          cost_per_tonne?: number | null
+          created_at?: string | null
+          id?: string
+          loading_point_efficiency?: number | null
+          metric_date?: string
+          metrics_data?: Json | null
+          orders_delayed?: number | null
+          orders_fulfilled?: number | null
+          sla_compliance_rate?: number | null
+          total_cost?: number | null
+          total_rakes_formed?: number | null
+          wagon_utilization_rate?: number | null
+        }
+        Relationships: []
+      }
+      production_recommendations: {
+        Row: {
+          based_on_orders: number
+          created_at: string | null
+          created_by: string | null
+          current_inventory: number
+          id: string
+          priority_score: number
+          product_name: string
+          reasoning: Json
+          recommendation_date: string
+          recommended_tonnage: number
+          status: string | null
+          transport_capacity_available: number
+        }
+        Insert: {
+          based_on_orders: number
+          created_at?: string | null
+          created_by?: string | null
+          current_inventory: number
+          id?: string
+          priority_score: number
+          product_name: string
+          reasoning: Json
+          recommendation_date?: string
+          recommended_tonnage: number
+          status?: string | null
+          transport_capacity_available: number
+        }
+        Update: {
+          based_on_orders?: number
+          created_at?: string | null
+          created_by?: string | null
+          current_inventory?: number
+          id?: string
+          priority_score?: number
+          product_name?: string
+          reasoning?: Json
+          recommendation_date?: string
+          recommended_tonnage?: number
+          status?: string | null
+          transport_capacity_available?: number
+        }
+        Relationships: []
+      }
       rake_plan_orders: {
         Row: {
           created_at: string
@@ -165,14 +270,17 @@ export type Database = {
         Row: {
           assigned_loading_point: string
           composite_priority_score: number | null
+          cost_breakdown: Json | null
           created_at: string
           destinations: string[]
           estimated_dispatch_time: string | null
           estimated_total_cost: number
           id: string
+          multi_destination: boolean | null
           origin_stockyard: string
           plan_date: string
           rake_id: string
+          sla_compliance_score: number | null
           total_tonnage: number
           utilization_percentage: number
           wagon_count: number
@@ -181,14 +289,17 @@ export type Database = {
         Insert: {
           assigned_loading_point: string
           composite_priority_score?: number | null
+          cost_breakdown?: Json | null
           created_at?: string
           destinations: string[]
           estimated_dispatch_time?: string | null
           estimated_total_cost: number
           id?: string
+          multi_destination?: boolean | null
           origin_stockyard: string
           plan_date?: string
           rake_id: string
+          sla_compliance_score?: number | null
           total_tonnage: number
           utilization_percentage: number
           wagon_count: number
@@ -197,14 +308,17 @@ export type Database = {
         Update: {
           assigned_loading_point?: string
           composite_priority_score?: number | null
+          cost_breakdown?: Json | null
           created_at?: string
           destinations?: string[]
           estimated_dispatch_time?: string | null
           estimated_total_cost?: number
           id?: string
+          multi_destination?: boolean | null
           origin_stockyard?: string
           plan_date?: string
           rake_id?: string
+          sla_compliance_score?: number | null
           total_tonnage?: number
           utilization_percentage?: number
           wagon_count?: number

@@ -12,6 +12,8 @@ import Inventory from "./pages/Inventory";
 import Wagons from "./pages/Wagons";
 import LoadingPoints from "./pages/LoadingPoints";
 import Plans from "./pages/Plans";
+import ProductionRecommendations from "./pages/ProductionRecommendations";
+import Analytics from "./pages/Analytics";
 import Scenarios from "./pages/Scenarios";
 import Admin from "./pages/Admin";
 import RoleRequest from "./pages/RoleRequest";
@@ -58,6 +60,16 @@ const App = () => (
             <Route path="/plans" element={
               <ProtectedRoute requireRole="planner">
                 <Layout><Plans /></Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/production" element={
+              <ProtectedRoute requireRole="senior_planner">
+                <Layout><ProductionRecommendations /></Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/analytics" element={
+              <ProtectedRoute requireRole="viewer">
+                <Layout><Analytics /></Layout>
               </ProtectedRoute>
             } />
             <Route path="/scenarios" element={
