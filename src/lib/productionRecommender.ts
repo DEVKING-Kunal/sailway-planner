@@ -43,9 +43,76 @@ export class ProductionRecommender {
   private wagons: Wagon[];
 
   constructor(orders: Order[], inventory: InventoryItem[], wagons: Wagon[]) {
+    this.validateInputData(orders, inventory, wagons);
     this.orders = orders.filter(o => o); // Filter out null/undefined
     this.inventory = inventory;
     this.wagons = wagons;
+  }
+
+  private validateInputData(orders: Order[], inventory: InventoryItem[], wagons: Wagon[]): void {
+    // Validate orders array
+    if (!Array.isArray(orders) || orders.length === 0) {
+      throw new Error('Orders array is required and must not be empty');
+    }
+
+    orders.forEach((order, index) => {
+      if (!order) return; // Will be filtered out
+      
+      if (!order.tonnage_required || order.tonnage_required <= 0) {
+        throw new Error(`Order ${index}: Invalid tonnage (${order.tonnage_required}). Must be positive.`);
+      }
+      
+      if (order.tonnage_required > 10000) {
+        throw new Error(`Order ${index}: Tonnage ${order.tonnage_required} exceeds maximum of 10,000 tonnes`);
+      }
+
+      if (!order.deadline_date) {
+        throw new Error(`Order ${index}: Missing deadline date`);
+      }
+
+      const deadline = new Date(order.deadline_date);
+      if (isNaN(deadline.getTime())) {
+        throw new Error(`Order ${index}: Invalid deadline date format`);
+      }
+
+      if (!['critical', 'high', 'medium', 'low'].includes(order.priority_level)) {
+        throw new Error(`Order ${index}: Invalid priority level (${order.priority_level})`);
+      }
+
+      if (!order.product_name || order.product_name.trim() === '') {
+        throw new Error(`Order ${index}: Product name is required`);
+      }
+    });
+
+    // Validate inventory array
+    if (!Array.isArray(inventory)) {
+      throw new Error('Inventory array is required');
+    }
+
+    inventory.forEach((item, index) => {
+      if (item.tonnage_available < 0) {
+        throw new Error(`Inventory ${index}: Invalid tonnage (${item.tonnage_available}). Must be non-negative.`);
+      }
+
+      if (!item.product_name || item.product_name.trim() === '') {
+        throw new Error(`Inventory ${index}: Product name is required`);
+      }
+    });
+
+    // Validate wagons array
+    if (!Array.isArray(wagons)) {
+      throw new Error('Wagons array is required');
+    }
+
+    wagons.forEach((wagon, index) => {
+      if (wagon.available_count < 0) {
+        throw new Error(`Wagon ${index}: Available count must be non-negative`);
+      }
+
+      if (!wagon.wagon_type || wagon.wagon_type.trim() === '') {
+        throw new Error(`Wagon ${index}: Wagon type is required`);
+      }
+    });
   }
 
   /**
@@ -83,6 +150,8 @@ export class ProductionRecommender {
   }
 
   private analyzeProductDemand(productName: string, orders: Order[]): ProductionRecommendation | null {
+    if (orders.length === 0) return null;
+    
     // Calculate total demand
     const totalDemand = orders.reduce((sum, o) => sum + o.tonnage_required, 0);
     
