@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle, XCircle, Clock, Mail } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
 
 type AppRole = 'admin' | 'senior_planner' | 'planner' | 'viewer';
 
@@ -23,7 +23,6 @@ export default function AdminRoleRequests() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const assignRole = useAssignRole();
-  const [userEmails, setUserEmails] = useState<Record<string, string>>({});
 
   // Fetch all pending role requests
   const { data: requests, isLoading } = useQuery({
@@ -38,33 +37,6 @@ export default function AdminRoleRequests() {
       return data || [];
     },
   });
-
-  // Fetch user emails for all requests
-  useEffect(() => {
-    const fetchUserEmails = async () => {
-      if (!requests) return;
-      
-      const emails: Record<string, string> = {};
-      
-      for (const request of requests) {
-        try {
-          const { data, error } = await supabase.functions.invoke('get-user-by-id', {
-            body: { userId: request.user_id }
-          });
-          
-          if (!error && data?.email) {
-            emails[request.user_id] = data.email;
-          }
-        } catch (err) {
-          console.error('Error fetching user email:', err);
-        }
-      }
-      
-      setUserEmails(emails);
-    };
-
-    fetchUserEmails();
-  }, [requests]);
 
   const updateRequest = useMutation({
     mutationFn: async ({ id, status, userId, role }: { id: string; status: string; userId: string; role: AppRole }) => {
@@ -159,12 +131,9 @@ export default function AdminRoleRequests() {
               {pendingRequests.map((request) => (
                 <div key={request.id} className="p-4 border rounded-lg space-y-3">
                   <div className="flex items-start justify-between">
-                    <div className="flex-1 space-y-1">
+                    <div className="flex-1">
                       <p className="font-medium text-lg">{ROLE_LABELS[request.requested_role as AppRole]}</p>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Mail className="h-4 w-4" />
-                        <span>{userEmails[request.user_id] || 'Loading email...'}</span>
-                      </div>
+                      <p className="text-sm text-muted-foreground">User ID: {request.user_id}</p>
                       <p className="text-xs text-muted-foreground">
                         Requested {new Date(request.created_at).toLocaleDateString()}
                       </p>
@@ -226,12 +195,8 @@ export default function AdminRoleRequests() {
               {reviewedRequests.map((request) => (
                 <div key={request.id} className="p-4 border rounded-lg space-y-2 opacity-60">
                   <div className="flex items-center justify-between">
-                    <div className="space-y-1">
+                    <div>
                       <p className="font-medium">{ROLE_LABELS[request.requested_role as AppRole]}</p>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Mail className="h-4 w-4" />
-                        <span>{userEmails[request.user_id] || 'Loading email...'}</span>
-                      </div>
                       <p className="text-xs text-muted-foreground">
                         Requested {new Date(request.created_at).toLocaleDateString()} • 
                         Reviewed {request.reviewed_at ? new Date(request.reviewed_at).toLocaleDateString() : 'N/A'}

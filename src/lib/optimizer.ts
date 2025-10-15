@@ -84,92 +84,6 @@ export class RakeOptimizer {
     this.inventory = JSON.parse(JSON.stringify(inventory));
     this.wagons = JSON.parse(JSON.stringify(wagons));
     this.loadingPoints = JSON.parse(JSON.stringify(loadingPoints));
-    
-    // Validate inputs after cloning
-    this.validateInputs();
-  }
-
-  private validateInputs(): void {
-    // Validate orders
-    if (!Array.isArray(this.orders) || this.orders.length === 0) {
-      throw new Error('Orders array is required and must not be empty');
-    }
-
-    this.orders.forEach((order, idx) => {
-      if (!order.tonnage_required || order.tonnage_required <= 0) {
-        throw new Error(`Order ${idx}: Tonnage must be positive (got ${order.tonnage_required})`);
-      }
-      
-      if (order.tonnage_required > 10000) {
-        throw new Error(`Order ${idx}: Tonnage ${order.tonnage_required} exceeds limit of 10,000`);
-      }
-
-      if (!order.deadline_date) {
-        throw new Error(`Order ${idx}: Missing deadline date`);
-      }
-
-      const deadline = new Date(order.deadline_date);
-      if (isNaN(deadline.getTime())) {
-        throw new Error(`Order ${idx}: Invalid deadline date`);
-      }
-
-      if (!['critical', 'high', 'medium', 'low'].includes(order.priority_level)) {
-        throw new Error(`Order ${idx}: Invalid priority (${order.priority_level})`);
-      }
-
-      if (!BUSINESS_RULES.VALID_CITIES.includes(order.destination)) {
-        throw new Error(`Order ${idx}: Invalid destination (${order.destination}). Must be one of: ${BUSINESS_RULES.VALID_CITIES.join(', ')}`);
-      }
-    });
-
-    // Validate inventory
-    if (!Array.isArray(this.inventory)) {
-      throw new Error('Inventory array is required');
-    }
-
-    this.inventory.forEach((item, idx) => {
-      if (item.tonnage_available < 0) {
-        throw new Error(`Inventory ${idx}: Tonnage cannot be negative (got ${item.tonnage_available})`);
-      }
-
-      if (!BUSINESS_RULES.VALID_CITIES.includes(item.stockyard_name)) {
-        throw new Error(`Inventory ${idx}: Invalid stockyard (${item.stockyard_name})`);
-      }
-    });
-
-    // Validate wagons
-    if (!Array.isArray(this.wagons) || this.wagons.length === 0) {
-      throw new Error('Wagons array is required and must not be empty');
-    }
-
-    this.wagons.forEach((wagon, idx) => {
-      if (wagon.available_count < 0) {
-        throw new Error(`Wagon ${idx}: Available count cannot be negative (got ${wagon.available_count})`);
-      }
-
-      if (wagon.total_count < wagon.available_count) {
-        throw new Error(`Wagon ${idx}: Total count (${wagon.total_count}) < available count (${wagon.available_count})`);
-      }
-
-      if (!BUSINESS_RULES.WAGON_TYPES[wagon.wagon_type]) {
-        throw new Error(`Wagon ${idx}: Unknown wagon type (${wagon.wagon_type}). Must be one of: ${Object.keys(BUSINESS_RULES.WAGON_TYPES).join(', ')}`);
-      }
-    });
-
-    // Validate loading points
-    if (!Array.isArray(this.loadingPoints)) {
-      throw new Error('Loading points array is required');
-    }
-
-    this.loadingPoints.forEach((lp, idx) => {
-      if (!lp.capacity_tph || lp.capacity_tph <= 0) {
-        throw new Error(`Loading point ${idx}: Capacity must be positive (got ${lp.capacity_tph})`);
-      }
-
-      if (!['active', 'inactive', 'maintenance'].includes(lp.operational_status)) {
-        throw new Error(`Loading point ${idx}: Invalid status (${lp.operational_status})`);
-      }
-    });
   }
 
   /**
@@ -487,11 +401,6 @@ export class RakeOptimizer {
     const wagonTypeConfig = BUSINESS_RULES.WAGON_TYPES[wagonType as keyof typeof BUSINESS_RULES.WAGON_TYPES];
     const wagonCostPerKm = wagonTypeConfig?.costPerKm || 2.5;
     
-    // Validate cost calculation inputs
-    if (wagonCount <= 0) throw new Error('Wagon count must be positive');
-    if (distance < 0) throw new Error('Distance cannot be negative');
-    if (totalTonnage <= 0) throw new Error('Total tonnage must be positive');
-
     // 8-Component Cost Model
     const baseFreight = BUSINESS_RULES.COSTS.baseRakeCharge;
     const distanceCost = wagonCount * wagonCostPerKm * distance * BUSINESS_RULES.COSTS.distanceMultiplier;
@@ -499,9 +408,6 @@ export class RakeOptimizer {
     
     // Demurrage: estimated based on loading time
     const loadingHours = Math.ceil((totalTonnage / 1000) * 2);
-    if (!isFinite(loadingHours) || loadingHours < 0) {
-      throw new Error('Invalid loading hours calculation');
-    }
     const demurrage = loadingHours > 24 ? (loadingHours - 24) * BUSINESS_RULES.COSTS.demurragePerHour : 0;
     
     // Penalty: check if any orders are at risk or breached
